@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "wx-crypt"
+version = "0.0.1"
+authors = [
+    { name = "panzhongxian", email = "panzhongxian0532@gmail.com" },
+]
+description = "WeCom Bot Callback Server Simple Framework"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pycryptodome>=3.10.0",
+]
+[project.urls]
+Homepage = "https://github.com/easy-wx/wx-crypt"
+Issues = "https://github.com/easy-wx/wx-crypt/issues"
