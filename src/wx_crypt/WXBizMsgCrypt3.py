@@ -14,7 +14,7 @@ from Crypto.Cipher import AES
 import xml.etree.cElementTree as ET
 import socket
 
-import wx_crypt.ierror
+import wx_crypt.ierror as ierror
 from wx_crypt.channel import WxChannel_Mp, WxChannel_Wecom
 """
 关于Crypto.Cipher模块，ImportError: No module named 'Crypto'解决方案
