@@ -4,6 +4,7 @@
 @copyright: Copyright (c) 1998-2014 Tencent Inc.
 """
 # ------------------------------------------------------------------------
+import json
 import logging
 import base64
 import random
@@ -15,11 +16,11 @@ import xml.etree.cElementTree as ET
 import socket
 
 import wx_crypt.ierror as ierror
-from wx_crypt.channel import WxChannel_Mp, WxChannel_Wecom
+from wx_crypt.channel import WxChannel_Mp, WxChannel_Wecom, WxChannel_WecomAiBot
 """
 关于Crypto.Cipher模块，ImportError: No module named 'Crypto'解决方案
 请到官方网站 https://www.dlitz.net/software/pycrypto/ 下载pycrypto。
-下载后，按照README中的“Installation”小节的提示进行pycrypto安装。
+下载后，按照README中的"Installation"小节的提示进行pycrypto安装。
 """
 
 
@@ -96,6 +97,39 @@ class XMLParse:
         }
         resp_xml = self.AES_TEXT_RESPONSE_TEMPLATE % resp_dict
         return resp_xml
+
+
+class JSONParse:
+    """提供企业微信智能机器人（AI Bot）JSON 格式消息的提取与生成接口"""
+
+    def extract(self, jsontext):
+        """从 JSON body 中提取加密消息字段。
+        @param jsontext: bytes 或 str，格式为 {"encrypt":"..."}
+        @return: (ret, encrypt_str)
+        """
+        try:
+            if isinstance(jsontext, bytes):
+                jsontext = jsontext.decode('utf-8')
+            data = json.loads(jsontext)
+            encrypt = data.get("encrypt", "")
+            if not encrypt:
+                return ierror.WXBizMsgCrypt_ParseXml_Error, None
+            return ierror.WXBizMsgCrypt_OK, encrypt
+        except Exception as e:
+            logger = logging.getLogger()
+            logger.error(e)
+            return ierror.WXBizMsgCrypt_ParseXml_Error, None
+
+    def generate(self, encrypt, signature, timestamp, nonce):
+        """生成 JSON 格式回包字符串。
+        @return: JSON 字符串 {"encrypt":..., "msgsignature":..., "timestamp":..., "nonce":...}
+        """
+        return json.dumps({
+            "encrypt": encrypt,
+            "msgsignature": signature,
+            "timestamp": int(timestamp),
+            "nonce": nonce,
+        })
 
 
 class PKCS7Encoder():
@@ -246,10 +280,10 @@ class WXBizMsgCrypt(object):
 
     def EncryptMsg(self, sReplyMsg, sNonce, timestamp=None):
         # 将企业回复用户的消息加密打包
-        # @param sReplyMsg: 企业号待回复用户的消息，xml格式的字符串
+        # @param sReplyMsg: 待回复的消息明文字符串（旧版 XML，新版 JSON 均可）
         # @param sTimeStamp: 时间戳，可以自己生成，也可以用URL参数的timestamp,如为None则自动用当前时间
         # @param sNonce: 随机串，可以自己生成，也可以用URL参数的nonce
-        # sEncryptMsg: 加密后的可以直接回复用户的密文，包括msg_signature, timestamp, nonce, encrypt的xml格式的字符串,
+        # sEncryptMsg: 加密后的密文，WxChannel_WecomAiBot 返回 JSON 字符串，其余返回 XML 字符串
         # return：成功0，sEncryptMsg,失败返回对应的错误码None
         pc = Prpcrypt(self.key)
         ret, encrypt = pc.encrypt(sReplyMsg, self.m_sReceiveId)
@@ -263,20 +297,26 @@ class WXBizMsgCrypt(object):
         ret, signature = sha1.getSHA1(self.m_sToken, timestamp, sNonce, encrypt)
         if ret != 0:
             return ret, None
-        xmlParse = XMLParse()
-        return ret, xmlParse.generate(encrypt, signature, timestamp, sNonce)
+        if self.channel == WxChannel_WecomAiBot:
+            msgParse = JSONParse()
+        else:
+            msgParse = XMLParse()
+        return ret, msgParse.generate(encrypt, signature, timestamp, sNonce)
 
     def DecryptMsg(self, sPostData, sMsgSignature, sTimeStamp, sNonce):
         # 检验消息的真实性，并且获取解密后的明文
         # @param sMsgSignature: 签名串，对应URL参数的msg_signature
         # @param sTimeStamp: 时间戳，对应URL参数的timestamp
         # @param sNonce: 随机串，对应URL参数的nonce
-        # @param sPostData: 密文，对应POST请求的数据
+        # @param sPostData: 密文，WxChannel_WecomAiBot 对应 JSON body，其余对应 XML body
         #  xml_content: 解密后的原文，当return返回0时有效
         # @return: 成功0，失败返回对应的错误码
         # 验证安全签名
-        xmlParse = XMLParse()
-        ret, encrypt = xmlParse.extract(sPostData)
+        if self.channel == WxChannel_WecomAiBot:
+            msgParse = JSONParse()
+        else:
+            msgParse = XMLParse()
+        ret, encrypt = msgParse.extract(sPostData)
         if ret != 0:
             return ret, None
         sha1 = SHA1()
